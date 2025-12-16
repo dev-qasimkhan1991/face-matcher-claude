@@ -1,0 +1,19 @@
+# Node dependencies
+node_modules/
+
+# Environment files (VERY IMPORTANT)
+.env
+.env.local
+.env.production
+
+# React / build output
+build/
+dist/
+
+# Logs
+logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
