@@ -4,15 +4,35 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+html {
+  width: 100%;
+  height: 100%;
+  position: fixed;
+  overflow: hidden;
 }
 
 body {
-  font-family: 'Inter', -apple-system, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: linear-gradient(145deg, #0a0f1e 0%, #1a2332 50%, #2d3748 100%);
   min-height: 100vh;
-  padding: 1.5rem;
+  width: 100%;
+  height: 100%;
+  padding: max(1.5rem, env(safe-area-inset-top)) 
+           max(1.5rem, env(safe-area-inset-right)) 
+           max(1.5rem, env(safe-area-inset-bottom)) 
+           max(1.5rem, env(safe-area-inset-left));
   overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 body::before {
@@ -24,6 +44,7 @@ body::before {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(99,102,241,0.5), transparent);
   z-index: 1000;
+  pointer-events: none;
 }
 
 .container {
@@ -31,15 +52,16 @@ body::before {
   margin: 0 auto;
   position: relative;
   z-index: 10;
+  width: 100%;
 }
 
-/* ✨ 2025 Glassmorphism Cards */
+/* ✨ 2025 Glassmorphism Cards - Optimized for Mobile */
 .card {
   background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 24px;
-  padding: 2rem;
+  padding: clamp(1rem, 5vw, 2rem);
   margin-bottom: 1.5rem;
   box-shadow: 
     0 8px 32px rgba(0,0,0,0.3),
@@ -47,6 +69,9 @@ body::before {
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .card::before {
@@ -57,6 +82,7 @@ body::before {
   right: 0;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(99,102,241,0.6), transparent);
+  pointer-events: none;
 }
 
 .card:hover {
@@ -66,6 +92,10 @@ body::before {
     inset 0 1px 0 rgba(255,255,255,0.3);
 }
 
+.card:active {
+  transform: translateY(-2px);
+}
+
 /* 🎨 Main Title - AI Glow Effect */
 .main-title {
   text-align: center;
@@ -73,11 +103,12 @@ body::before {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  font-size: clamp(2.2rem, 5vw, 3.5rem);
+  font-size: clamp(1.8rem, 4.5vw, 3.5rem);
   font-weight: 700;
-  margin-bottom: 2.5rem;
-  text-shadow: 0 0 30px rgba(99,102,241,0.5);
+  margin-bottom: clamp(1.5rem, 5vw, 2.5rem);
   animation: glow 2s ease-in-out infinite alternate;
+  line-height: 1.2;
+  word-break: break-word;
 }
 
 @keyframes glow {
@@ -88,13 +119,16 @@ body::before {
 /* 📱 Modern Inputs */
 .input-row {
   display: flex;
+  flex-direction: column;
   gap: 1rem;
-  align-items: center;
+  align-items: stretch;
+  width: 100%;
 }
 
 .input {
-  flex: 1;
-  padding: 1rem 1.5rem;
+  width: 100%;
+  min-height: 44px;
+  padding: clamp(0.75rem, 3vw, 1rem) clamp(1rem, 3vw, 1.5rem);
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -103,6 +137,9 @@ body::before {
   color: white;
   transition: all 0.3s ease;
   font-weight: 400;
+  -webkit-appearance: none;
+  appearance: none;
+  will-change: border-color, box-shadow;
 }
 
 .input::placeholder {
@@ -116,9 +153,16 @@ body::before {
   background: rgba(255, 255, 255, 0.15);
 }
 
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* 🚀 3D Gradient Buttons */
 .btn {
-  padding: 1rem 2rem;
+  min-height: 44px;
+  min-width: 44px;
+  padding: clamp(0.75rem, 3vw, 1rem) clamp(1.5rem, 4vw, 2rem);
   background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
   color: white;
   border: none;
@@ -130,6 +174,13 @@ body::before {
   position: relative;
   overflow: hidden;
   text-transform: none;
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  will-change: transform, box-shadow;
 }
 
 .btn::before {
@@ -141,6 +192,7 @@ body::before {
   height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
   transition: left 0.5s;
+  pointer-events: none;
 }
 
 .btn:hover::before {
@@ -156,10 +208,16 @@ body::before {
   transform: translateY(0) scale(0.98);
 }
 
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 /* 🖼️ Image Previews - Modern Gallery Style */
 .preview-img {
   max-width: 100%;
-  max-height: 420px;
+  max-height: clamp(300px, 60vw, 420px);
   border-radius: 20px;
   margin: 0 auto;
   display: block;
@@ -167,6 +225,10 @@ body::before {
     0 20px 40px rgba(0,0,0,0.3),
     0 0 0 1px rgba(255,255,255,0.1);
   transition: all 0.4s ease;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  object-fit: cover;
 }
 
 .preview-img:hover {
@@ -178,8 +240,8 @@ body::before {
 
 /* Live Capture Circle - 2025 Biometric Style */
 .live-preview {
-  width: 340px;
-  height: 340px;
+  width: clamp(240px, 70vw, 340px);
+  height: clamp(240px, 70vw, 340px);
   border-radius: 50%;
   object-fit: cover;
   margin: 0 auto;
@@ -191,11 +253,14 @@ body::before {
     0 0 0 4px rgba(16, 185, 129, 0.3),
     0 20px 40px rgba(0,0,0,0.4);
   animation: pulse-green 2s infinite;
+  will-change: box-shadow;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 @keyframes pulse-green {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3); }
-  50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.1); }
+  0%, 100% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3), 0 20px 40px rgba(0,0,0,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.1), 0 20px 40px rgba(0,0,0,0.4); }
 }
 
 /* 📊 Result Cards - Status Indicators */
@@ -212,12 +277,14 @@ body::before {
 .match-badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
-  padding: 0.75rem 1.5rem;
+  padding: clamp(0.5rem, 2vw, 0.75rem) clamp(1rem, 3vw, 1.5rem);
   border-radius: 50px;
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: clamp(0.9rem, 3vw, 1.1rem);
   margin: 1rem 0;
+  flex-wrap: wrap;
 }
 
 .match-badge.yes {
@@ -239,6 +306,7 @@ body::before {
   border-radius: 6px;
   overflow: hidden;
   margin: 1rem 0;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
 }
 
 .similarity-fill {
@@ -253,12 +321,154 @@ body::before {
 }
 
 /* 📱 Mobile Optimizations */
-@media (max-width: 768px) {
-  body { padding: 1rem; }
-  .card { padding: 1.5rem; margin-bottom: 1rem; }
-  .input-row { flex-direction: column; }
-  .input, .btn { width: 100%; }
-  .live-preview { width: 280px; height: 280px; }
+
+/* Small phones (320px - 480px) */
+@media (max-width: 480px) {
+  body {
+    padding: max(1rem, env(safe-area-inset-top)) 
+             max(1rem, env(safe-area-inset-right)) 
+             max(1rem, env(safe-area-inset-bottom)) 
+             max(1rem, env(safe-area-inset-left));
+  }
+
+  .card {
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    border-radius: 16px;
+  }
+
+  .main-title {
+    font-size: clamp(1.6rem, 4vw, 2.2rem);
+    margin-bottom: 1.5rem;
+  }
+
+  .input-row {
+    gap: 0.75rem;
+  }
+
+  .input, .btn {
+    width: 100%;
+    font-size: 16px;
+  }
+
+  .live-preview {
+    width: 240px;
+    height: 240px;
+  }
+
+  .preview-img {
+    max-height: 300px;
+  }
+
+  .loading, .error, .status-message {
+    font-size: 0.9rem;
+  }
+}
+
+/* Medium phones (480px - 768px) */
+@media (480px < width <= 768px) {
+  body {
+    padding: max(1.25rem, env(safe-area-inset-top)) 
+             max(1.25rem, env(safe-area-inset-right)) 
+             max(1.25rem, env(safe-area-inset-bottom)) 
+             max(1.25rem, env(safe-area-inset-left));
+  }
+
+  .card {
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .input-row {
+    gap: 0.875rem;
+  }
+
+  .live-preview {
+    width: 280px;
+    height: 280px;
+  }
+}
+
+/* Landscape Orientation */
+@media (orientation: landscape) {
+  body {
+    padding: max(0.75rem, env(safe-area-inset-top)) 
+             max(1rem, env(safe-area-inset-right)) 
+             max(0.75rem, env(safe-area-inset-bottom)) 
+             max(1rem, env(safe-area-inset-left));
+  }
+
+  .container {
+    max-width: 100%;
+  }
+
+  .card {
+    margin-bottom: 0.75rem;
+    padding: 1rem;
+  }
+
+  .main-title {
+    margin-bottom: 1rem;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+  }
+
+  .input-row {
+    flex-direction: row;
+    gap: 0.75rem;
+  }
+
+  .input, .btn {
+    flex: 1;
+  }
+
+  .live-preview {
+    width: 220px;
+    height: 220px;
+  }
+
+  .preview-img {
+    max-height: 250px;
+  }
+}
+
+/* Portrait Orientation */
+@media (orientation: portrait) {
+  .input-row {
+    flex-direction: column;
+  }
+
+  .input, .btn {
+    width: 100%;
+  }
+}
+
+/* Large phones & tablets (768px+) */
+@media (min-width: 769px) {
+  body {
+    padding: max(2rem, env(safe-area-inset-top)) 
+             max(2rem, env(safe-area-inset-right)) 
+             max(2rem, env(safe-area-inset-bottom)) 
+             max(2rem, env(safe-area-inset-left));
+  }
+
+  .card {
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .input-row {
+    flex-direction: row;
+    gap: 1rem;
+  }
+
+  .input, .btn {
+    flex: 1;
+  }
+
+  .live-preview {
+    width: 340px;
+    height: 340px;
+  }
 }
 
 /* Loading & Status */
@@ -266,37 +476,40 @@ body::before {
   text-align: center;
   color: #a5b4fc;
   font-weight: 500;
-  padding: 2rem;
-  font-size: 1.1rem;
+  padding: clamp(1.5rem, 4vw, 2rem);
+  font-size: clamp(0.95rem, 2vw, 1.1rem);
 }
 
 .status-message {
   text-align: center;
   color: rgba(255,255,255,0.8);
-  padding: 1.5rem;
-  font-size: 1rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  font-size: clamp(0.9rem, 2vw, 1rem);
   background: rgba(255,255,255,0.05);
   border-radius: 16px;
   border: 1px solid rgba(255,255,255,0.1);
   margin: 1rem 0;
+  word-break: break-word;
 }
 
 .error {
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #fca5a5;
-  padding: 1.25rem;
+  padding: clamp(1rem, 3vw, 1.25rem);
   border-radius: 16px;
   margin: 1rem 0;
   text-align: center;
   backdrop-filter: blur(10px);
+  font-size: clamp(0.9rem, 2vw, 1rem);
+  word-break: break-word;
 }
 
 .placeholder {
   text-align: center;
   color: rgba(255,255,255,0.5);
-  padding: 3rem 1rem;
-  font-size: 1rem;
+  padding: clamp(2rem, 5vw, 3rem) 1rem;
+  font-size: clamp(0.9rem, 2vw, 1rem);
 }
 
 /* Debug Panel (Modernized) */
@@ -309,6 +522,7 @@ body::before {
   font-size: 0.85rem;
   max-height: 300px;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .debug-panel pre {
@@ -316,4 +530,67 @@ body::before {
   padding: 1rem;
   border-radius: 12px;
   color: #a5b4fc;
+  font-size: clamp(0.75rem, 1.5vw, 0.85rem);
+  word-break: break-word;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* Accessibility - Focus visible for keyboard navigation */
+.btn:focus-visible,
+.input:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.8);
+  outline-offset: 2px;
+}
+
+/* High DPI / Retina Display Support */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .card {
+    border-width: 0.5px;
+  }
+}
+
+/* Reduced Motion for Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .main-title {
+    animation: none;
+  }
+
+  .live-preview {
+    animation: none;
+  }
+}
+
+/* Dark mode preference (usually already dark, but for consistency) */
+@media (prefers-color-scheme: dark) {
+  body {
+    color-scheme: dark;
+  }
+}
+
+/* Liveness wrapper optimization */
+.liveness-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  will-change: contents;
+}
+
+.liveness-container {
+  width: 100%;
+}
+
+.liveness-container .title {
+  font-size: clamp(1.3rem, 3vw, 1.5rem);
+  color: white;
+  margin-bottom: 1rem;
+  text-align: center;
 }

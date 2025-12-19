@@ -88,7 +88,6 @@ app.post("/compare", upload.single("image2"), async (req, res) => {
 
     rekognitionV2.compareFaces(params, (err, data) => {
       if (err) {
-        console.error("AWS Compare Error:", err);
         return res.status(500).json({ error: err.message });
       }
       if (data.FaceMatches && data.FaceMatches.length > 0) {
@@ -108,7 +107,6 @@ app.post("/compare", upload.single("image2"), async (req, res) => {
       });
     });
   } catch (error) {
-    console.error("Compare error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -130,7 +128,6 @@ app.post(
           .json({ error: "Both image1 and image2 are required" });
       }
 
-      console.log("[compare-images] Comparing two uploaded images");
       const image1Buffer = fs.readFileSync(req.files.image1[0].path);
       const image2Buffer = fs.readFileSync(req.files.image2[0].path);
 
@@ -146,11 +143,9 @@ app.post(
 
       rekognitionV2.compareFaces(params, (err, data) => {
         if (err) {
-          console.error("AWS Compare Error:", err);
           return res.status(500).json({ error: err.message });
         }
 
-        console.log("[compare-images] Comparison successful");
         if (data.FaceMatches && data.FaceMatches.length > 0) {
           const similarity = data.FaceMatches[0].Similarity;
           return res.json({
@@ -173,7 +168,6 @@ app.post(
         });
       });
     } catch (error) {
-      console.error("Compare-images error:", error);
       res
         .status(500)
         .json({ error: "Internal server error", details: error.message });
@@ -182,16 +176,14 @@ app.post(
 );
 
 // ======================================================
-// 3) CREATE LIVENESS SESSION (Fixed with Date conversion)
+// 3) CREATE LIVENESS SESSION
 // ======================================================
 app.get("/liveness/create", async (req, res) => {
   try {
-    console.log("[liveness/create] Creating session...");
     const createCmd = new CreateFaceLivenessSessionCommand({});
     const createResp = await rekogV3.send(createCmd);
 
     if (!createResp.SessionId) {
-      console.error("[liveness/create] No sessionId returned");
       return res.status(500).json({ error: "Failed to create liveness session" });
     }
 
@@ -200,8 +192,6 @@ app.get("/liveness/create", async (req, res) => {
       .getSessionToken({ DurationSeconds: 900 })
       .promise();
 
-    console.log("[liveness/create] Session created:", createResp.SessionId);
-
     return res.json({
       sessionId: createResp.SessionId,
       region: AWS_REGION,
@@ -209,11 +199,10 @@ app.get("/liveness/create", async (req, res) => {
         accessKeyId: tokenResp.Credentials.AccessKeyId,
         secretAccessKey: tokenResp.Credentials.SecretAccessKey,
         sessionToken: tokenResp.Credentials.SessionToken,
-        expiration: new Date(tokenResp.Credentials.Expiration), // ✅ Convert to Date
+        expiration: new Date(tokenResp.Credentials.Expiration),
       },
     });
   } catch (err) {
-    console.error("[liveness/create] error:", err.message);
     return res.status(500).json({
       error: "Failed to create liveness session",
       details: err.message,
@@ -226,15 +215,12 @@ app.get("/liveness/create", async (req, res) => {
 // ======================================================
 app.get("/liveness/result/:sessionId", async (req, res) => {
   try {
-    console.log("[liveness/result] Fetching result for:", req.params.sessionId);
     const cmd = new GetFaceLivenessSessionResultsCommand({
       SessionId: req.params.sessionId,
     });
     const result = await rekogV3.send(cmd);
-    console.log("[liveness/result] Status:", result?.Status || "unknown");
     return res.json(result);
   } catch (err) {
-    console.error("[liveness/result] error:", err.message);
     return res.status(500).json({
       error: "Failed to fetch liveness result",
       details: err.message,
