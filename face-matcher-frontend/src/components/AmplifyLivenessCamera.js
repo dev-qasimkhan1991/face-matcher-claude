@@ -29,7 +29,8 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
   const timeoutRef = useRef(null);
 
   const MAX_RETRIES = 3;
-  const LIVENESS_ENDPOINT = process.env.REACT_APP_LIVENESS_ENDPOINT || 'http://localhost:3000';
+  const LIVENESS_ENDPOINT = process.env.REACT_APP_API_BASE_URL;
+
 
   // Cleanup function
   const cleanup = () => {

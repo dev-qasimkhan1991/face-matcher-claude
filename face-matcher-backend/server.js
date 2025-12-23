@@ -11,7 +11,7 @@ const {
 } = require("@aws-sdk/client-rekognition");
 const fs = require("fs");
 const path = require("path");
-const fetch = require("node-fetch");
+const fetch = global.fetch;
 
 const app = express();
 app.use(cors());
@@ -40,6 +40,7 @@ const rekogV3 = new RekognitionClient({ region: AWS_REGION });
 const uploadsDir = path.resolve(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.chmodSync(uploadsDir, 0o755);
 }
 
 const storage = multer.diskStorage({
@@ -240,7 +241,7 @@ app.get("/health", (req, res) => {
 // ======================================================
 // START SERVER
 // ======================================================
-app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
-  console.log(`AWS_REGION=${AWS_REGION}`);
-});
+ app.listen(PORT, "0.0.0.0", () => {
+   console.log(`🚀 Server running on port ${PORT}`);
+   console.log(`AWS_REGION=${AWS_REGION}`);
+ });

@@ -31,7 +31,11 @@ function FaceMatcherPage() {
     setLoading(true);
 
     try {
-      const apiUrl = `/api/aadhar/getCandidateDetails?ppoNumber=${ppoNumber}`;
+      const apiUrl =
+  `https://nmclivenessdetector.amshoft.in/api/aadhar/getCandidateDetails?ppoNumber=${ppoNumber}`;
+
+
+
       const response = await fetch(apiUrl);
       const data = await response.json();
 
@@ -70,10 +74,14 @@ function FaceMatcherPage() {
     try {
       setLoading(true);
 
-      const response = await fetch('http://localhost:3000/compare', {
-        method: 'POST',
-        body: formData,
-      });
+      const response = await fetch(
+  `${process.env.REACT_APP_API_BASE_URL}/compare`,
+  {
+    method: 'POST',
+    body: formData,
+  }
+);
+
 
       const data = await response.json();
       setMatchResult(data);

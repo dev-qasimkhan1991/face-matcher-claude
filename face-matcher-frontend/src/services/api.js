@@ -2,8 +2,9 @@ import axios from 'axios';
 
 // Your backend (face compare, liveness)
 const API = axios.create({
-  baseURL: 'http://localhost:3001',
+  baseURL: process.env.REACT_APP_API_BASE_URL,
 });
+
 
 // External Aadhaar backend (IMPORTANT)
 const AADHAAR_BASE_URL =
