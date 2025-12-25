@@ -27,17 +27,39 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
   const captureCompleteRef = useRef(false);
   const isMountedRef = useRef(false);
   const timeoutRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   const MAX_RETRIES = 3;
-  const LIVENESS_ENDPOINT = process.env.REACT_APP_API_BASE_URL;
 
+  const getLivenessEndpoint = () => {
+    const endpoint = process.env.REACT_APP_API_BASE_URL;
 
-  // Cleanup function
+    if (endpoint && endpoint.trim() !== '') {
+      return endpoint;
+    }
+
+    let auto;
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      auto = `${window.location.protocol}//${window.location.hostname}:3000`;
+    } else {
+      const port = window.location.port ? `:${window.location.port}` : '';
+      auto = `${window.location.protocol}//${window.location.hostname}${port}`;
+    }
+
+    return auto;
+  };
+
   const cleanup = () => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     if (capturedPreview) {
       URL.revokeObjectURL(capturedPreview);
     }
@@ -47,7 +69,7 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
     if (captureCompleteRef.current) {
       return;
     }
-    
+
     sessionCreatedRef.current = false;
     sessionIdRef.current = null;
     handlingAnalysisRef.current = false;
@@ -56,17 +78,51 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
     setLoading(true);
   };
 
-  const createSession = async () => {
-    if (sessionCreatedRef.current) {
-      return;
+  const fetchWithTimeout = async (url, options = {}) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
 
-    if (captureCompleteRef.current) {
+    abortControllerRef.current = new AbortController();
+    const timeout = setTimeout(() => abortControllerRef.current.abort(), 30000);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: abortControllerRef.current.signal,
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+          ...options.headers,
+        },
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return response;
+    } catch (err) {
+      clearTimeout(timeout);
+
+      if (err.name === 'AbortError') {
+        throw new Error('Request timeout');
+      }
+
+      throw err;
+    }
+  };
+
+  const createSession = async () => {
+    if (sessionCreatedRef.current || captureCompleteRef.current) {
       return;
     }
 
     if (retryCount >= MAX_RETRIES) {
-      setStatus('❌ Max retries exceeded. Please refresh and try again.');
+      setStatus('Max retries exceeded. Please refresh and try again.');
       setLoading(false);
       return;
     }
@@ -74,36 +130,19 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
     sessionCreatedRef.current = true;
     sessionIdRef.current = null;
     detectorKeyRef.current += 1;
-    
+
     try {
       setLoading(true);
       setStatus('Creating liveness session...');
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      const endpoint = getLivenessEndpoint();
+      const url = `${endpoint}/liveness/create`;
 
-      const resp = await fetch(`${LIVENESS_ENDPOINT}/liveness/create`, {
-        signal: controller.signal,
-      });
+      const response = await fetchWithTimeout(url, { method: 'GET' });
+      const data = await response.json();
 
-      clearTimeout(timeoutId);
-
-      if (!resp.ok) {
-        throw new Error(`HTTP Error: ${resp.status}`);
-      }
-
-      const data = await resp.json();
-
-      if (!data.sessionId) {
-        throw new Error('No sessionId returned from backend');
-      }
-
-      if (!data.region) {
-        throw new Error('No region returned from backend');
-      }
-
-      if (!data.identity) {
-        throw new Error('No identity credentials returned from backend');
+      if (!data.sessionId || !data.region || !data.identity) {
+        throw new Error('Invalid session response');
       }
 
       const sessionConfig = {
@@ -115,9 +154,8 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
         },
       };
 
-      // Validate expiration is valid date
       if (isNaN(sessionConfig.identity.expiration.getTime())) {
-        throw new Error('Invalid expiration date from backend');
+        throw new Error('Invalid expiration date');
       }
 
       if (!isMountedRef.current || captureCompleteRef.current) {
@@ -126,22 +164,20 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
 
       setSessionData(sessionConfig);
       setStatus('Session ready — follow the on-screen instructions');
-      
       sessionIdRef.current = sessionConfig.sessionId;
     } catch (err) {
-      console.error('Session creation error:', err);
-      
-      if (err.name === 'AbortError') {
-        setStatus('Request timeout. Retrying...');
-      } else {
-        setStatus(`Failed to create liveness session. Retry ${retryCount + 1}/${MAX_RETRIES}`);
+      let message = 'Failed to create liveness session';
+      if (err.message.includes('timeout')) {
+        message = 'Connection timeout. Retrying...';
+      } else if (err.message.includes('404')) {
+        message = 'Liveness service not available';
       }
 
+      setStatus(`${message}. Retry ${retryCount + 1}/${MAX_RETRIES}`);
       setSessionData(null);
       setRetryCount(prev => prev + 1);
       hardReset();
 
-      // Exponential backoff retry
       const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
       timeoutRef.current = setTimeout(createSession, delay);
     } finally {
@@ -151,26 +187,40 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
 
   useEffect(() => {
     isMountedRef.current = true;
-    
+
     if (captureCompleteRef.current) {
       return;
     }
-    
+
     hardReset();
     const initTimeout = setTimeout(createSession, 100);
+
+    // Force CSS re-application every 500ms to counter Amplify's dynamic styles
+    const styleEnforcementInterval = setInterval(() => {
+      const videos = document.querySelectorAll('.amplify-liveness-detector video, .amplify-liveness-detector canvas');
+      videos.forEach(video => {
+        video.style.width = '100%';
+        video.style.maxWidth = '100%';
+        video.style.minWidth = '100%';
+        video.style.minHeight = '500px';
+        video.style.maxHeight = '80vh';
+        video.style.aspectRatio = '3 / 4';
+        video.style.objectFit = 'cover';
+        video.style.borderRadius = '16px';
+        video.style.transform = 'none';
+        video.style.scale = '1';
+      });
+    }, 500);
 
     return () => {
       isMountedRef.current = false;
       if (initTimeout) clearTimeout(initTimeout);
+      if (styleEnforcementInterval) clearInterval(styleEnforcementInterval);
       cleanup();
     };
   }, []);
 
-  const base64ToFile = (
-    imageData,
-    filename = 'liveness_reference.jpg',
-    mime = 'image/jpeg'
-  ) => {
+  const base64ToFile = (imageData, filename = 'liveness_reference.jpg', mime = 'image/jpeg') => {
     try {
       if (!imageData) {
         throw new Error('No image data provided');
@@ -180,14 +230,13 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
 
       if (imageData instanceof Uint8Array) {
         blob = new Blob([imageData], { type: mime });
-      }
-      else if (imageData && typeof imageData === 'object' && !Array.isArray(imageData)) {
+      } else if (imageData && typeof imageData === 'object' && !Array.isArray(imageData)) {
         const keys = Object.keys(imageData)
           .filter(k => !isNaN(k))
           .sort((a, b) => Number(a) - Number(b));
-        
+
         if (keys.length === 0) {
-          throw new Error('Invalid image object format');
+          throw new Error('Invalid image object');
         }
 
         const uint8Array = new Uint8Array(keys.length);
@@ -195,13 +244,12 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
           uint8Array[index] = imageData[key];
         });
         blob = new Blob([uint8Array], { type: mime });
-      }
-      else if (typeof imageData === 'string') {
+      } else if (typeof imageData === 'string') {
         const b64 = imageData.replace(/^data:image\/\w+;base64,/, '');
         if (!b64) {
           throw new Error('Invalid base64 string');
         }
-        
+
         const binary = atob(b64);
         const len = binary.length;
         const array = new Uint8Array(len);
@@ -209,33 +257,26 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
           array[i] = binary.charCodeAt(i);
         }
         blob = new Blob([array], { type: mime });
-      }
-      else if (imageData && typeof imageData.length === 'number') {
+      } else if (imageData && typeof imageData.length === 'number') {
         const uint8Array = new Uint8Array(Array.from(imageData));
         blob = new Blob([uint8Array], { type: mime });
-      }
-      else {
-        throw new Error(`Unsupported image data format: ${typeof imageData}`);
+      } else {
+        throw new Error(`Unsupported image format: ${typeof imageData}`);
       }
 
       if (blob.size === 0) {
-        throw new Error('Converted blob is empty');
+        throw new Error('Image blob is empty');
       }
 
       const file = new File([blob], filename, { type: mime });
       return file;
     } catch (err) {
-      console.error('Image conversion error:', err);
       return null;
     }
   };
 
   const handleAnalysisComplete = async () => {
-    if (handlingAnalysisRef.current) {
-      return;
-    }
-
-    if (captureCompleteRef.current) {
+    if (handlingAnalysisRef.current || captureCompleteRef.current) {
       return;
     }
 
@@ -245,24 +286,16 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
     }
 
     handlingAnalysisRef.current = true;
-    
+
     setStatus('Liveness analysis complete — fetching results...');
     setLoading(true);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const endpoint = getLivenessEndpoint();
+      const resultUrl = `${endpoint}/liveness/result/${sessionData.sessionId}`;
 
-      const resultUrl = `${LIVENESS_ENDPOINT}/liveness/result/${sessionData.sessionId}`;
-      const resp = await fetch(resultUrl, { signal: controller.signal });
-
-      clearTimeout(timeoutId);
-
-      if (!resp.ok) {
-        throw new Error(`HTTP Error: ${resp.status}`);
-      }
-
-      const data = await resp.json();
+      const response = await fetchWithTimeout(resultUrl, { method: 'GET' });
+      const data = await response.json();
 
       if (!data.Status) {
         throw new Error('No Status in response');
@@ -272,8 +305,10 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
       const minConfidence = 90;
 
       if (data.Status !== 'SUCCEEDED' || confidence < minConfidence) {
-        setStatus(`❌ Liveness verification failed\nConfidence: ${confidence.toFixed(1)}%\nPlease try again with a live face.`);
-        
+        setStatus(
+          `Liveness verification failed\nConfidence: ${confidence.toFixed(1)}%\nPlease try again with a live face.`
+        );
+
         handlingAnalysisRef.current = false;
         hardReset();
         timeoutRef.current = setTimeout(createSession, 2000);
@@ -284,17 +319,15 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
 
       if (data?.ReferenceImage?.Bytes) {
         base64Bytes = data.ReferenceImage.Bytes;
-      } 
-      else if (data?.AuditImages?.[0]?.Bytes) {
+      } else if (data?.AuditImages?.[0]?.Bytes) {
         base64Bytes = data.AuditImages[0].Bytes;
-      }
-      else if (data?.AuditImages?.[0]?.BoundingBox?.Bytes) {
+      } else if (data?.AuditImages?.[0]?.BoundingBox?.Bytes) {
         base64Bytes = data.AuditImages[0].BoundingBox.Bytes;
       }
 
       if (!base64Bytes) {
-        setStatus('❌ No captured image found. Please try again.');
-        
+        setStatus('No captured image found. Please try again.');
+
         handlingAnalysisRef.current = false;
         hardReset();
         timeoutRef.current = setTimeout(createSession, 2000);
@@ -302,9 +335,9 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
       }
 
       const file = base64ToFile(base64Bytes);
-      
+
       if (!file) {
-        setStatus('❌ Error processing captured image.');
+        setStatus('Error processing captured image.');
         handlingAnalysisRef.current = false;
         hardReset();
         timeoutRef.current = setTimeout(createSession, 2000);
@@ -312,36 +345,33 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
       }
 
       captureCompleteRef.current = true;
-      
+
       try {
         setLiveImage(file);
       } catch (callbackErr) {
-        console.error('Error calling setLiveImage:', callbackErr);
-        setStatus('❌ Error saving image. Please try again.');
+        setStatus('Error saving image. Please try again.');
         captureCompleteRef.current = false;
         handlingAnalysisRef.current = false;
         hardReset();
         return;
       }
-      
+
       const previewUrl = URL.createObjectURL(file);
       setCapturedPreview(previewUrl);
-      
+
       setIsCaptured(true);
       setStatus('✓ Photo captured successfully!');
-      
+
       setSessionData(null);
       sessionCreatedRef.current = false;
       sessionIdRef.current = null;
     } catch (err) {
-      console.error('Analysis error:', err);
-      
-      if (err.name === 'AbortError') {
-        setStatus('Request timeout. Please try again.');
+      if (err.message.includes('timeout')) {
+        setStatus('Request timeout. Retrying...');
       } else {
-        setStatus('❌ Verification error. Restarting...');
+        setStatus('Verification error. Restarting...');
       }
-      
+
       handlingAnalysisRef.current = false;
       hardReset();
       timeoutRef.current = setTimeout(createSession, 2000);
@@ -351,20 +381,19 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
     }
   };
 
-  const handleError = async (err) => {
+  const handleError = async err => {
     if (captureCompleteRef.current) {
       return;
     }
-    
-    console.error('Liveness detector error:', err);
-    setStatus('❌ Liveness check error. Restarting...');
-    
+
+    setStatus('Liveness check error. Restarting...');
+
     hardReset();
-    
+
     await new Promise(resolve => {
       timeoutRef.current = setTimeout(resolve, 1000);
     });
-    
+
     if (isMountedRef.current) {
       await createSession();
     }
@@ -374,12 +403,11 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
     if (captureCompleteRef.current) {
       return;
     }
-    
-    console.warn('User cancelled liveness check');
-    setStatus('⚠️ Liveness check cancelled. Restarting...');
-    
+
+    setStatus('Liveness check cancelled. Restarting...');
+
     hardReset();
-    
+
     await new Promise(resolve => {
       timeoutRef.current = setTimeout(resolve, 1000);
     });
@@ -389,9 +417,8 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
     }
   };
 
-  const buildCredentialProvider = (identity) => {
+  const buildCredentialProvider = identity => {
     if (!identity) {
-      console.error('Identity is missing for credential provider');
       return undefined;
     }
 
@@ -414,7 +441,6 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
 
         return credentials;
       } catch (credErr) {
-        console.error('Credential provider error:', credErr);
         throw credErr;
       }
     };
@@ -426,20 +452,12 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
 
       {isCaptured ? (
         <div className="liveness-captured">
-          <img
-            src={capturedPreview}
-            alt="Live Capture"
-            className="live-preview"
-          />
-          <p className="liveness-success-msg">
-            ✓ Photo captured successfully!
-          </p>
+          <img src={capturedPreview} alt="Live Capture" className="live-preview" />
+          <p className="liveness-success-msg">✓ Photo captured successfully!</p>
         </div>
       ) : (
         <>
-          <p className="liveness-status">
-            {status}
-          </p>
+          <p className="liveness-status">{status}</p>
 
           {loading ? (
             <div className="liveness-loader">
@@ -447,96 +465,146 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
               <p>Please wait...</p>
             </div>
           ) : (
-            sessionData?.sessionId && 
-            sessionIdRef.current === sessionData.sessionId && 
+            sessionData?.sessionId &&
+            sessionIdRef.current === sessionData.sessionId &&
             !captureCompleteRef.current && (
               <div className="liveness-wrapper">
                 <style>{`
-                  /* Override Amplify FaceLivenessDetector styles for mobile */
+                  /* CRITICAL: Force styles even during recording state */
+                  .amplify-liveness-detector,
+                  .amplify-liveness-detector *,
+                  .amplify-liveness-detector video,
+                  .amplify-liveness-detector canvas {
+                    box-sizing: border-box !important;
+                  }
+
+                  /* Main detector container - Full width and height */
                   .amplify-liveness-detector {
                     width: 100% !important;
                     max-width: 100% !important;
+                    min-width: 100% !important;
                     height: auto !important;
                     padding: 0 !important;
                     margin: 0 !important;
                   }
 
-                  .amplify-liveness-detector > div {
+                  .amplify-liveness-detector > div,
+                  .amplify-liveness-detector > div > div {
                     width: 100% !important;
                     max-width: 100% !important;
+                    min-width: 100% !important;
                   }
 
-                  /* Video stream container */
-                  .amplify-video-stream {
+                  /* Video stream container - Maximize height */
+                  .amplify-video-stream,
+                  .amplify-liveness-detector [class*="videoContainer"],
+                  .amplify-liveness-detector [class*="video-container"] {
                     width: 100% !important;
                     max-width: 100% !important;
+                    min-width: 100% !important;
                     height: auto !important;
                     display: flex !important;
                     justify-content: center !important;
+                    align-items: center !important;
                   }
 
-                  /* Video element */
+                  /* Video and canvas - ENLARGED - FORCE ALL STATES */
                   .amplify-liveness-detector video,
-                  .amplify-liveness-detector canvas {
+                  .amplify-liveness-detector canvas,
+                  .amplify-liveness-detector video[class*="amplify"],
+                  .amplify-liveness-detector canvas[class*="amplify"],
+                  .amplify-video-stream video,
+                  .amplify-video-stream canvas {
                     width: 100% !important;
                     max-width: 100% !important;
+                    min-width: 100% !important;
                     height: auto !important;
-                    aspect-ratio: 1 / 1 !important;
+                    min-height: 500px !important;
+                    max-height: 80vh !important;
+                    aspect-ratio: 3 / 4 !important;
                     border-radius: 16px !important;
+                    object-fit: cover !important;
+                    position: relative !important;
                   }
 
-                  /* Instruction text overlay */
-                  .amplify-instruction-text {
+                  /* CRITICAL: Override recording state styles */
+                  .amplify-liveness-detector[data-recording="true"] video,
+                  .amplify-liveness-detector[data-recording="true"] canvas,
+                  .amplify-liveness-detector.recording video,
+                  .amplify-liveness-detector.recording canvas,
+                  .amplify-liveness-detector[class*="recording"] video,
+                  .amplify-liveness-detector[class*="recording"] canvas {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    min-width: 100% !important;
+                    height: auto !important;
+                    min-height: 500px !important;
+                    max-height: 80vh !important;
+                    aspect-ratio: 3 / 4 !important;
+                    transform: none !important;
+                    scale: 1 !important;
+                  }
+
+                  /* Oval frame overlay - Adjust size for all states */
+                  .amplify-liveness-detector .amplify-liveness-face-match-indicator,
+                  .amplify-liveness-detector [class*="oval"],
+                  .amplify-liveness-detector [class*="Oval"],
+                  .amplify-liveness-detector [class*="freshness-indicator"] {
+                    width: 85% !important;
+                    height: 85% !important;
+                    max-width: 450px !important;
+                    max-height: 600px !important;
+                  }
+
+                  /* Instruction text - Keep readable */
+                  .amplify-instruction-text,
+                  .amplify-liveness-detector [class*="instruction"],
+                  .amplify-liveness-detector [class*="Instruction"] {
                     font-size: clamp(14px, 3vw, 16px) !important;
                     padding: 12px !important;
                     margin: 8px 0 !important;
                     word-wrap: break-word !important;
                     overflow-wrap: break-word !important;
+                    background: rgba(0,0,0,0.7) !important;
+                    border-radius: 8px !important;
                   }
 
-                  /* Button styles */
-                  .amplify-button {
+                  /* Buttons - Keep touchable */
+                  .amplify-button,
+                  .amplify-liveness-detector button {
                     min-width: 44px !important;
                     min-height: 44px !important;
                     padding: 10px 16px !important;
                     font-size: clamp(12px, 2.5vw, 14px) !important;
                   }
 
-                  /* Flexbox containers */
-                  .amplify-flex {
-                    display: flex !important;
-                    flex-direction: column !important;
-                    gap: 12px !important;
-                    width: 100% !important;
-                  }
-
-                  /* Container padding */
-                  .amplify-container {
-                    padding: 0 !important;
-                    width: 100% !important;
-                  }
-
-                  /* Close button positioning */
-                  .amplify-close-button {
+                  /* Close button - Position correctly */
+                  .amplify-close-button,
+                  .amplify-liveness-detector [class*="close"] button {
                     top: 12px !important;
                     right: 12px !important;
                     width: 40px !important;
                     height: 40px !important;
-                    min-width: 40px !important;
-                    min-height: 40px !important;
-                    z-index: 10 !important;
+                    z-index: 1000 !important;
                   }
 
-                  /* Recording indicator */
-                  .amplify-recording-badge {
-                    font-size: clamp(12px, 2vw, 14px) !important;
-                    padding: 8px 12px !important;
+                  /* Recording indicator - Always visible */
+                  .amplify-liveness-detector [class*="recording"],
+                  .amplify-liveness-detector [class*="Recording"] {
+                    top: 12px !important;
+                    left: 12px !important;
+                    z-index: 999 !important;
                   }
 
-                  /* Ensure all Amplify elements respect mobile viewport */
+                  /* Mobile specific adjustments */
                   @media (max-width: 480px) {
-                    .amplify-liveness-detector {
-                      overflow: hidden !important;
+                    .amplify-liveness-detector video,
+                    .amplify-liveness-detector canvas,
+                    .amplify-liveness-detector[data-recording="true"] video,
+                    .amplify-liveness-detector[data-recording="true"] canvas {
+                      min-height: 450px !important;
+                      max-height: 75vh !important;
+                      border-radius: 12px !important;
                     }
 
                     .amplify-instruction-text {
@@ -548,13 +616,64 @@ const AmplifyLivenessCamera = ({ setLiveImage }) => {
                       padding: 8px 12px !important;
                       font-size: 13px !important;
                     }
+
+                    /* Make oval frame larger on mobile */
+                    .amplify-liveness-detector .amplify-liveness-face-match-indicator,
+                    .amplify-liveness-detector [class*="oval"] {
+                      width: 90% !important;
+                      height: 90% !important;
+                    }
                   }
 
-                  /* Landscape mode adjustments */
+                  /* Landscape mode - Adjust accordingly */
                   @media (orientation: landscape) {
                     .amplify-liveness-detector video,
                     .amplify-liveness-detector canvas {
-                      max-height: 60vh !important;
+                      max-height: 85vh !important;
+                      aspect-ratio: 4 / 3 !important;
+                    }
+                  }
+
+                  /* Portrait mode - Maximize vertical space */
+                  @media (orientation: portrait) {
+                    .amplify-liveness-detector video,
+                    .amplify-liveness-detector canvas,
+                    .amplify-liveness-detector[data-recording="true"] video,
+                    .amplify-liveness-detector[data-recording="true"] canvas {
+                      min-height: 550px !important;
+                      max-height: 80vh !important;
+                      aspect-ratio: 3 / 4 !important;
+                    }
+                  }
+
+                  /* Tablets and larger phones */
+                  @media (min-width: 481px) and (max-width: 768px) {
+                    .amplify-liveness-detector video,
+                    .amplify-liveness-detector canvas {
+                      min-height: 600px !important;
+                      max-height: 75vh !important;
+                    }
+                  }
+
+                  /* Large screens */
+                  @media (min-width: 769px) {
+                    .amplify-liveness-detector video,
+                    .amplify-liveness-detector canvas {
+                      max-width: 600px !important;
+                      min-height: 700px !important;
+                      max-height: 80vh !important;
+                      margin: 0 auto !important;
+                    }
+                  }
+
+                  /* iOS Safari specific fixes */
+                  @supports (-webkit-touch-callout: none) {
+                    .amplify-liveness-detector video,
+                    .amplify-liveness-detector canvas {
+                      -webkit-transform: translateZ(0) !important;
+                      transform: translateZ(0) !important;
+                      backface-visibility: hidden !important;
+                      -webkit-backface-visibility: hidden !important;
                     }
                   }
                 `}</style>
